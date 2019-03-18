@@ -1,0 +1,429 @@
+---
+title: "ppdai_data_analyst"
+author: "Kipmin"
+date: "2019年3月13日"
+output: html_document
+---
+========================================================
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, packages}
+# 加载你最终使用的所有组件
+# 在这个代码块的分析中。
+
+# 注意，在这个代码块中，将参数 "echo" 设为假。
+# This prevents the code from displaying in the knitted HTML output.这可以避免代码混入 HTML 输出显示。
+# 应当在文件中，对所有代码块设为 echo=FALSE 。
+Sys.setlocale('LC_ALL','Chinese')
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(GGally)
+library(readr)
+library(memisc)
+```
+
+将RStudio语言设置为中文，导入本文需要的库
+```{r echo=FALSE, Load_the_Data}
+# 加载数据
+options(scipen=200)
+LC <- read_csv("LC.csv", 
+    col_types = cols(`借款成功日期` = col_date(format = "%Y/%m/%d"), 
+        `借款期限` = col_integer(), `借款类型` = col_factor(levels = c()), 
+        `初始评级` = col_factor(levels = c("A", 
+            "B", "C", "D", "E", "F")), `历史成功借款次数` = col_integer(), 
+        `历史正常还款期数` = col_integer(), 
+        `历史逾期还款期数` = col_integer(), 
+        `是否首标` = col_factor(levels = c()),
+        `学历认证` = col_factor(levels = c()), 
+        `征信认证` = col_factor(levels = c()), 
+        `性别` = col_factor(levels = c()), 
+        `户口认证` = col_factor(levels = c()), 
+        `手机认证` = col_factor(levels = c()), 
+        `淘宝认证` = col_factor(levels = c()), 
+        `视频认证` = col_factor(levels = c())), 
+    locale = locale(encoding = "GB2312"),  na = "NULL")
+# LCIS <- read_csv("LCIS.csv", 
+#     locale = locale(encoding = "GB2312"), na = "NULL")
+# LP <- read_csv("~/School/Data-Analyst/ppdai/LP.csv", 
+#     col_types = cols(recorddate = col_character(),  
+#        `期数` = col_integer()), 
+#    locale = locale(encoding = "GB2312"),  na = "NULL")
+
+```
+
+在导入数据时，将所有类别更正
+
+```{r echo=FALSE}
+dim(LC)
+```
+
+```{r echo=FALSE}
+str(LC)
+```
+
+# 整理数据
+
+```{r echo=FALSE, warning=FALSE}
+# LCIS <- LCIS[, -c(31:36)]
+LC$credit_score <- 0
+LC$credit_score <- with(LC, ifelse(`手机认证` == "成功认证", credit_score + 2, credit_score))
+LC$credit_score <- with(LC, ifelse(`学历认证` == "成功认证", credit_score + 5, credit_score))
+LC$credit_score <- with(LC, ifelse(`视频认证` == "成功认证", credit_score + 7, credit_score))
+LC$credit_score <- with(LC, ifelse(`户口认证` == "成功认证", credit_score + 8, credit_score))
+LC$credit_score <- with(LC, ifelse(`征信认证` == "成功认证", credit_score + 9, credit_score))
+LC$credit_score <- with(LC, ifelse(`淘宝认证` == "成功认证", credit_score + 12, credit_score))
+LC$credit_score.bucket <- cut(LC$credit_score, c(0, 7, 15, 25, 43))
+```
+
+# 单变量绘图选择
+```{r echo=FALSE, Univariate_Plots}
+# 借款人的年龄分布
+ggplot(aes(x = `年龄`), data = LC) +
+  geom_histogram(binwidth = 1) +
+  ggtitle("借款人的年龄分布")
+```
+
+```{r echo=FALSE}
+# 借款人借的金额分布
+ggplot(aes(x = `借款金额`), data = LC) +
+  geom_histogram(binwidth = 0.03) +
+  scale_x_log10() +
+  scale_y_log10() +
+  ggtitle("借款人借的金额分布")
+```
+
+```{r echo=FALSE}
+qplot(x = `借款利率`, data = LC, binwidth = 2) +
+  scale_y_log10() +
+  scale_x_continuous(breaks = seq(7, 25, 1)) +
+  ggtitle("借款利率分布")
+```
+
+```{r echo=FALSE}
+qplot(x = credit_score, data = LC, binwidth = 1) +
+  scale_y_log10() +
+  ggtitle("借款人的信用分分布")
+```
+
+```{r echo=FALSE}
+ggplot(aes(y = `借款金额`), data = LC) +
+  geom_boxplot() +
+  scale_y_log10() +
+  ggtitle("借款金额箱线图")
+```
+
+# 单变量分析
+
+### 你的数据集结构是什么？
+
+包括一个主键（listingid）、7个标的特征和13个成交当时的借款人信息
+
+|ListingId|	列表序号，为列表的唯一键。|
+| --------- | -------------------------- |
+|借款金额|	列表成交总金额。|
+|借款期限|	总的期数（按月计）。|
+|借款利率|	年化利率（百分数）。|
+|借款成功日期|	列表成交的日期。都在2015年1月1日以后。|
+|初始评级|	列表成交时的信用评级。AAA为安全标，AA为赔标，A-F为信用等级。|
+|借款类型|	分为'应收安全标'，‘电商’，‘APP闪电’，‘普通’和‘其他’。|
+|是否首标|	该标是否为借款人首标。|
+|年龄|	借款人在该列表借款成功时的年龄。|
+|性别|	该列表借款人性别。|
+|手机认证|	该列表借款人手机实名认证是否成功。|
+|户口认证|	该列表借款人户口认证是否成功。|
+|视频认证|	该列表借款人视频认证是否成功。|
+|学历认证|	该列表借款人学历认证是否成功。成功则表示有大专及以上学历。|
+|征信认证|	该列表借款人征信认证是否成功。成功则表示有人行征信报告。|
+|淘宝认证|	该列表借款人淘宝认证是否成功。成功则表示为淘宝店主。|
+|历史成功借款次数|	借款人在该列表成交之前的借款成功次数。|
+|历史成功借款金额|	借款人在该列表成交之前的借款成功金额。|
+|总待还本金|	借款人在该列表成交之前待还本金金额。|
+|历史正常还款期数|	借款人在该列表成交之前的按期还款期数。|
+|历史逾期还款期数|	借款人在该列表成交之前的逾期还款期数。|
+|credit_score|  通过各项维度认证综合而来的分数|
+
+### 你的数据集内感兴趣的主要特性有哪些？
+
+借款金额，借款利率，历史逾期还款期数；
+如何通过这些特征更好地筛选借款人，降低逾期还款率，减少坏账
+
+### 你认为数据集内哪些其他特征可以帮助你探索兴趣特点？
+
+6个认证特征可以帮助我更加精确的确认借款人的信用如何
+
+### 根据数据集内已有变量，你是否创建了任何新变量？
+
+通过6个认证的难度各不相同，按认证的难度不同，给认证模式不同的权重，再加起来得到一个新的信用分数(credit_score)变量
+
+### 在已经探究的特性中，是否存在任何异常分布？你是否对数据进行一些操作，如清洁、调整或改变数据的形式？如果是，你为什么会这样做？
+
+在借款利率和借款金额上，人数分布差异太大，借款金额上，金额差距过大，credit_score的人数分布上差异太大，对差异过大的变量取了对数，使图像看上去更加清晰。暂时没有发现异常分布
+
+
+# 双变量绘图选择
+```{r echo=FALSE, Bivariate_Plots}
+# 年龄和借款金额中位数的折线图
+ggplot(aes(x = `年龄`, y = `借款金额`), data = LC) +
+  geom_line(stat = 'summary', fun.y = median) +
+  scale_x_continuous(breaks = seq(17, 57, 2)) +
+  ggtitle("年龄和借款金额中位数的折线图")
+```
+
+```{r echo=FALSE}
+# 年龄和借款金额平均数的折线图
+ggplot(aes(x = `年龄`, y = `借款金额`), data = LC) +
+  geom_line(stat = 'summary', fun.y = mean) +
+  scale_x_continuous(breaks = seq(17, 57, 2)) +
+  ggtitle("年龄和借款金额平均数的折线图")
+```
+
+```{r echo=FALSE}
+# 借款利率中位数和credit_score的折线图
+# 创建新的表结构，得到用credit_score分组借款利率的中位数和平均数
+LC.by_bir_credit <- LC %>%
+  group_by(credit_score) %>%
+  summarise(bir_median = median(`借款利率`),
+            bir_mean = mean(`借款利率`),
+            n = n())
+ggplot(aes(x = credit_score, y = bir_median), data = LC.by_bir_credit) +
+  geom_line() +
+  scale_x_continuous(breaks = seq(0, 36, 3)) +
+  ggtitle("借款利率中位数和credit_score的折线图")
+```
+
+```{r echo=FALSE}
+#借款利率平均数和credit_score的折线图
+ggplot(aes(x = credit_score, y = bir_mean), data = LC.by_bir_credit) +
+  geom_line() +
+  scale_x_continuous(breaks = seq(0, 43, 2)) +
+  geom_smooth(method = 'lm') +
+  ggtitle("借款利率平均数和credit_score的折线图")
+```
+
+```{r echo=FALSE}
+# 把两个并为一个图观察，减少代码量，更易于观察
+# 借款金额中位数/平均数和credit_score的折线图
+ggplot(aes(x = credit_score, y = `借款金额`), data = LC) +
+  geom_line(stat = 'summary', fun.y = median, color = "red") +
+  geom_line(stat = 'summary', fun.y = mean, color = "blue") +
+  scale_x_continuous(breaks = seq(0, 43, 2)) +
+  geom_smooth(method = 'lm') +
+  ggtitle("借款金额中位数/平均数和credit_score的折线图")
+```
+
+```{r echo=FALSE}
+# 把两个并为一个图观察，减少代码量，更易于观察
+# 借款金额中位数/平均数和credit_score的折线图
+ggplot(aes(x = credit_score, y = `借款金额`), data = subset(LC, `借款类型` != "其他")) +
+  geom_line(stat = 'summary', fun.y = median, color = "red") +
+  geom_line(stat = 'summary', fun.y = mean, color = "blue") +
+  scale_x_continuous(breaks = seq(0, 43, 2)) +
+  geom_smooth(method = 'lm') +
+  ggtitle("借款金额中位数/平均数和credit_score的折线图（不包含其他类型）")
+```
+
+
+```{r echo=FALSE}
+# 借款金额中位数/平均数和借款利息关系的折线图
+ggplot(aes(x = `借款利率`, y = `借款金额`), data = LC) +
+  geom_line(stat = "summary", fun.y = median, color = "red") +
+  geom_line(stat = "summary", fun.y = mean, linetype = 2) +
+  geom_smooth(method = 'lm') +
+  scale_y_log10() +
+  ggtitle("借款金额中位数/平均数和借款利息关系的折线图")
+```
+
+```{r echo=FALSE}
+# 借款金额和借款利息关系的折线图
+ggplot(aes(x = `借款利率`, y = `借款金额`), data = subset(LC, `借款类型` != "其他")) +
+  geom_line(stat = "summary", fun.y = median, color = "red") +
+  geom_line(stat = "summary", fun.y = mean, linetype = 2) +
+  geom_smooth(method = 'lm') +
+  scale_y_log10() +
+  ggtitle("借款金额中位数/平均数和借款利息关系的折线图（不包含其他类型）")
+```
+
+##### 信用分和借款利率平均数的相关系数
+
+```{r echo=FALSE}
+cor.test(LC.by_bir_credit$credit_score, LC.by_bir_credit$bir_mean)
+```
+
+##### 信用分和借款金额平均数的相关系数
+
+```{r echo=FALSE}
+LC.by_loan_credit <- LC %>%
+  group_by(credit_score) %>%
+  summarise(loan_median = median(`借款金额`),
+            loan_mean = mean(`借款金额`),
+            n = n())
+cor.test(LC.by_loan_credit$credit_score, LC.by_loan_credit$loan_mean)
+```
+
+##### 年龄和借款金额中位数的相关系数
+
+```{r echo=FALSE}
+LC.by_loan_age <- LC %>%
+  group_by(`年龄`) %>%
+  summarise(loan_median = median(`借款金额`),
+            loan_mean = mean(`借款金额`),
+            n = n())
+cor.test(LC.by_loan_age$`年龄`, LC.by_loan_age$loan_median)
+```
+
+# 双变量分析
+
+### 探讨你在这部分探究中观察到的一些关系。这些感兴趣的特性与数据集内其他特性有什么区别？
+
+年龄越大的人通常会借更多的钱，借款利率和credit_card有很大的相关性，借款金额和credit_card也有很大的相关性。
+
+### 你是否观察到主要特性与其他特性之间的有趣关系？
+
+在我的观察中，我新建的变量credit_score与其他借款相关的变量几乎都有相关性。
+
+### 你发现最强的关系是什么？
+
+是年龄和借款金额中位数的关系，相关性达到了0.85，年龄越大的人似乎用的钱会越多
+
+### 异常现象
+
+在信用分31分左右，在借款金额和借款利率图中，都出现了异常现象，猜测是针对某个群体的专项贷款；
+在借款金额和借款利率图中，低于10%利率区域金额变化很大，后面将会对这个情况做出分析
+
+
+# 多变量绘图选择
+
+```{r echo=FALSE, Multivariate_Plots}
+ggplot(aes(x = `借款利率`, y = `借款金额`, color = LC$`借款类型`), data = LC) +
+  geom_point() +
+  scale_color_brewer(type = "div", guide = guide_legend(title = '借款类型')) +
+  ggtitle("借款利率和借款金额的关系（借款类型）")
+```
+
+```{r echo=FALSE}
+ggplot(aes(x = `借款利率`, y = `借款金额`, color = credit_score.bucket),
+       data = subset(LC, !is.na(credit_score.bucket))) +
+  geom_point() +
+  scale_color_brewer(type = "div", guide = guide_legend(title = '信用分')) +
+  ggtitle("借款利率和借款金额的关系（信用分）")
+```
+
+
+```{r echo=FALSE}
+ggplot(aes(x = `历史成功借款次数`, y = `历史逾期还款期数`, color = `credit_score.bucket`),
+       data = subset(LC, !is.na(credit_score.bucket))) +
+  geom_point(position = position_jitter(height = 0)) +
+  coord_cartesian(xlim = c(0, quantile(LC$`历史成功借款次数`, 0.99))) +
+  scale_color_brewer(type = "div", guide = guide_legend(title = '信用分')) +
+  ggtitle("历史成功借款次数和历史逾期还款期数的关系（信用分）")
+```
+
+```{r echo=FALSE}
+ggplot(aes(y = `借款金额`), data = LC) +
+  geom_boxplot() +
+  facet_wrap(~`借款类型`) +
+  scale_y_log10() +
+  ggtitle("借款金额和借款类型的关系")
+```
+
+
+# 多变量分析
+
+###  探讨你在这部分探究中观察到的一些关系。通过观察感兴趣的特性，是否存在相互促进的特性？
+
+- 图一，我观察到此公司在不同的借款类型给的借款利率是不同的，借款类型与借款利率的相关性最大，相比之下，电商渠道可以借到更多的钱，而其他渠道则多是大金额低利息的借贷，由此造成了在双变量分析（借贷金额，借贷利率）时的异常情况。
+
+- 图二，认证的越多，即信用分越高的人，相比于信用分低的人，有更大的概率借到利率在13-16的贷款，信用分低的人更多的处在16-24利率之间。
+
+- 图三，历史逾期越多，想再次借到钱的概率也越低，便可以通过提高信用分增大借到钱的概率。
+
+- 图四，验证图一。
+
+
+### 这些特性之间是否存在有趣或惊人的联系呢？
+
+借款类型是最影响借款利率和借款金额的变量，相比之下，信用分更多的是用来在借款后保障公司的变量，以及对借贷人后续借款时产生作用。
+
+### 选项：你是否创建过数据集的任何模型？讨论你模型的优缺点。
+
+```{r echo=FALSE}
+p1 <- lm(I(`借款金额`)~ `手机认证` + `学历认证` + `视频认证` + 
+                        `户口认证` + `征信认证` + `淘宝认证`, data = subset(LC, `借款类型` != "其他"))
+p2 <- update(p1, ~. + I(`历史成功借款金额`))
+p3 <- update(p2, ~. + `借款类型`)
+p4 <- update(p3, ~. + `历史正常还款期数`)
+p5 <- update(p4, ~. + `历史成功借款次数`)
+mtable(p3, p4, p5)
+```
+
+创建了一个关于借贷金额的模型
+
+优点：我判断其他类型的借贷是由专人去寻找贷款人的，所以不计入模型,提高了模型的精度。
+
+缺点：我创建的模型相关性只达到了0.5。。
+
+------
+
+# 定稿图与总结
+
+### 绘图一
+```{r echo=FALSE, Plot_One}
+ggplot(aes(x = `历史逾期还款期数`, y = `借款金额`, color = `借款类型`),
+       data = subset(LC, !is.na(credit_score.bucket))) +
+  geom_point(alpha = 0.5, position = position_jitter(width = 0.4, height = 0)) +
+  coord_cartesian(xlim = c(0, quantile(LC$`历史逾期还款期数`, 0.99)),
+                  ylim = c(0, quantile(LC$`借款金额`, 0.99))) +
+  scale_color_brewer(type = "seq", palette = "Reds",
+                     guide = guide_legend(title = '借款类型')) +
+  ggtitle("历史逾期还款期数与借款金额的关系（借款类型）")
+```
+
+### 描述一
+
+可以看出拍拍贷公司在自己的app中借贷额度普遍不高，逾期还款率较其他类型来说也少很多。
+
+### 绘图二
+```{r echo=FALSE, Plot_Two}
+ggplot(aes(x = `年龄`, y = `历史逾期还款期数`, color = `credit_score.bucket`),
+       data = subset(LC, !is.na(credit_score.bucket))) +
+  geom_point(position = position_jitter(height = 0)) +
+  scale_color_brewer(type = "div", guide = guide_legend(title = '信用分')) +
+  ggtitle("历史逾期还款期数与年龄的关系（信用分）")
+```
+
+### 描述二
+
+
+与我想象的很不一样，通过这个图，我认为年轻群体(20-30)对钱，对社会缺乏认知，并且因为逾期次数过多，会很难贷到钱，所以需要更多认证来拿到钱。
+
+### 绘图三
+```{r echo=FALSE, Plot_Three}
+ggplot(aes(x = `历史成功借款次数`, y = `借款金额`, color = credit_score.bucket),
+       data = subset(LC, !is.na(credit_score.bucket))) +
+  geom_point(alpha = 1/5, position = position_jitter(width = 0.4, height = 0)) +
+  coord_cartesian(xlim = c(0, quantile(LC$`历史成功借款次数`, 0.99)), 
+                  ylim = c(0, quantile(LC$`借款金额`, 0.99))) +
+  scale_color_brewer(type = "seq", palette = "Reds",
+                     guide = guide_legend(title = '信用分')) +
+  ggtitle("借款金额与历史成功借款次数的关系（信用分）")
+```
+
+### 描述三
+
+大多数信用分高的人都有更高的借款金额和更多的借款次数，拍拍贷对信用高的用户也更加信任。
+
+------
+
+# 反思
+
+
+拍拍贷的数据分析项目包含了15年到16年的部分业务数据，那时也是P2P金融最火的一段时间，由于数据量过大，我只集中精力研究了LC表，我先了解了LC表中的各个变量，再从我感兴趣的方面下手，**作为一个借贷公司，没有银行的背书，如何把钱借给能还钱的人？**，我先对借贷的人群进行了初步了解，然后假设了一个信用分的模型，从此下手探索我的模型与借款人行为的关系，发现借贷行为与信用分都产生了相关性。在更深入的了解借贷行为时，发现人们的行为与我的想象有很大出入，我认为人们会更非常在乎自己的信用是否良好，但仅仅是借贷公司而不是国家银行的话，人们似乎都不在意是否逾期与拖欠，我便开始了解拍拍贷公司如何解决这一问题，它的做法是，大额低息借贷都是经过借贷人员考察的借贷人，人为检查借贷人的资产偿还能力。电商渠道可以借高额贷款是因为与某些电商合作，借贷人的违约成本较高，而且利率不低，平衡好风险的情况下是可以做的，而自己的软件只做一些给大学生提供的小额贷款，利率高，而且大学生相对来说违约的情况更少。但是通过后面的分析发现逾期的情况还是很多，如何进一步缩小逾期的可能？我猜测借贷人的历史行为也会成为拍拍贷衡量是否放贷的标准之一，分析后也验证了我的猜测。
+
+
+
+
+
+
+
+
+
